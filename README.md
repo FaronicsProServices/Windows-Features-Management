@@ -13,4 +13,5 @@ Subcategories:
 1.	Fetch Application User Model IDs (AUMID)
 2.	Allow/Deny Apps to access location
 3.	Block Multiple Installed Apps on Windows
+4.	Export Start Menu Layout from Current Logged In User
 
