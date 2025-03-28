@@ -1,37 +1,65 @@
-# PowerShell Script for Taskbar Customization
+# Taskbar Customization Script for System-Wide Deployment
+# Compatible with MECM and other deployment tools
 
-# 1. Add HideClock Registry Key
-$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
-$keyName = "HideClock"
-$keyValue = 1
+# Elevate to system context if not already running as SYSTEM
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator"))  
+{  
+    Write-Host "This script requires system-level access. Attempting to elevate..."
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
 
-Write-Host "Creating registry key to hide the clock..."
-New-Item -Path $regPath -Force | Out-Null
-Set-ItemProperty -Path $regPath -Name $keyName -Value $keyValue
-Write-Host "Registry key HideClock added successfully."
+# Function to modify registry for all users
+function Set-RegistryForAllUsers {
+    param(
+        [string]$KeyPath,
+        [string]$ValueName,
+        [object]$Value,
+        [string]$Type = "DWord"
+    )
 
-# 2. Disable Allow Widgets via Group Policy
-$widgetsRegPath = "HKLM:\Software\Policies\Microsoft\Dsh"
-$widgetsKeyName = "AllowNewsAndInterests"
-$widgetsValue = 0
+    # Create the key path if it doesn't exist
+    if (!(Test-Path $KeyPath)) {
+        New-Item -Path $KeyPath -Force | Out-Null
+    }
 
-Write-Host "Disabling Allow Widgets policy..."
-New-Item -Path $widgetsRegPath -Force | Out-Null
-Set-ItemProperty -Path $widgetsRegPath -Name $widgetsKeyName -Value $widgetsValue
-Write-Host "Allow Widgets policy disabled."
+    # Set the registry value
+    try {
+        Set-ItemProperty -Path $KeyPath -Name $ValueName -Value $Value -Type $Type -ErrorAction Stop
+        Write-Host "Successfully set $ValueName in $KeyPath"
+    }
+    catch {
+        Write-Host "Failed to set $ValueName in $KeyPath. Error: $_"
+    }
+}
 
-# 3. Enable "Remove pinned programs from the taskbar" Policy
-$taskbarRegPath = "HKLM:\Software\Policies\Microsoft\Windows\Explorer"
-$taskbarKeyName = "NoPinningToTaskbar"
-$taskbarValue = 1
+# 1. Hide Clock (Machine-Wide)
+$clockRegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+Set-RegistryForAllUsers -KeyPath $clockRegPath -ValueName "HideClock" -Value 1
 
-Write-Host "Enabling 'Remove pinned programs from the taskbar' policy..."
-New-Item -Path $taskbarRegPath -Force | Out-Null
-Set-ItemProperty -Path $taskbarRegPath -Name $taskbarKeyName -Value $taskbarValue
-Write-Host "'Remove pinned programs from the taskbar' policy enabled."
+# 2. Disable Widgets Policy
+$widgetsRegPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
+Set-RegistryForAllUsers -KeyPath $widgetsRegPath -ValueName "AllowNewsAndInterests" -Value 0
 
-# 4. Open System Icons Configuration Panel
-Write-Host "Opening system icons configuration panel..."
-Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
+# 3. Disable Pinning to Taskbar
+$taskbarRegPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer"
+Set-RegistryForAllUsers -KeyPath $taskbarRegPath -ValueName "NoPinningToTaskbar" -Value 1
 
-Write-Host "Taskbar customization process completed. Restart Explorer if necessary."
+# 4. Disable Taskbar Widgets
+$widgetsTaskbarRegPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds"
+Set-RegistryForAllUsers -KeyPath $widgetsTaskbarRegPath -ValueName "EnableFeeds" -Value 0
+
+# 5. Restart Windows Explorer to apply changes
+try {
+    Stop-Process -Name "explorer" -Force
+    Start-Process "explorer.exe"
+    Write-Host "Windows Explorer restarted successfully."
+}
+catch {
+    Write-Host "Failed to restart Windows Explorer. Manual restart may be required."
+}
+
+Write-Host "Taskbar customization script completed successfully."
+
+# Logging for deployment tools
+exit 0
