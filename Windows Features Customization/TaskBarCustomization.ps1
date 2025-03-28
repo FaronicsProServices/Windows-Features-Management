@@ -1,5 +1,5 @@
 # PowerShell Script for Taskbar Customization
-# Designed to run silently and without restart
+# Designed to run silently and restart Explorer process
 
 # Suppress all error outputs and continue execution
 $ErrorActionPreference = 'SilentlyContinue'
@@ -43,17 +43,16 @@ $additionalTaskbarPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explor
 Set-RegistryKey -Path $additionalTaskbarPath -KeyName "ShowCortanaButton" -Value 0
 Set-RegistryKey -Path $additionalTaskbarPath -KeyName "ShowTaskViewButton" -Value 0
 
-# 5. Restart Explorer Process Silently
-try {
-    # Use taskkill to ensure Explorer is fully stopped
-    taskkill /F /IM explorer.exe | Out-Null
-    
-    # Restart Explorer
-    Start-Process explorer.exe
+# 5. Restart Explorer Process Reliably
+$explorerProcess = Get-Process explorer -ErrorAction SilentlyContinue
+
+if ($explorerProcess) {
+    # Stop all Explorer processes
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
 }
-catch {
-    Write-Error "Failed to restart Explorer process"
-}
+
+# Start a new Explorer process
+Start-Process explorer.exe
 
 # Exit with success code
 exit 0
