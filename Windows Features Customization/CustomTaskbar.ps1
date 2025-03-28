@@ -1,174 +1,42 @@
-# PowerShell Script for System-Wide Taskbar Customization
+# PowerShell Script for Taskbar Customization (No Restart Required)
 
-# Elevated Privileges Check
-$currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
-$windowsPrincipal = New-Object Security.Principal.WindowsPrincipal($currentUser)
-$adminRole = [Security.Principal.WindowsBuiltInRole]::Administrator
+# 1. Add HideClock Registry Key
+$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+$keyName = "HideClock"
+$keyValue = 1
 
-if (-NOT $windowsPrincipal.IsInRole($adminRole)) {
-    Write-Error "This script must be run as an Administrator."
-    exit
-}
+Write-Host "Creating registry key to hide the clock..."
+New-Item -Path $regPath -Force | Out-Null
+Set-ItemProperty -Path $regPath -Name $keyName -Value $keyValue
+Write-Host "Registry key HideClock added successfully."
 
-# Logging Function
-function Write-Log {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] $Message"
-}
+# 2. Disable Allow Widgets via Group Policy
+$widgetsRegPath = "HKLM:\Software\Policies\Microsoft\Dsh"
+$widgetsKeyName = "AllowNewsAndInterests"
+$widgetsValue = 0
 
-# Function to Ensure Registry Path Exists
-function Ensure-RegistryPath {
-    param([string]$Path)
-    
-    $pathParts = $Path -split '\\'
-    $currentPath = $pathParts[0]
-    
-    for ($i = 1; $i -lt $pathParts.Count; $i++) {
-        $currentPath += "\$($pathParts[$i])"
-        if (-not (Test-Path $currentPath)) {
-            try {
-                New-Item -Path $currentPath -Force | Out-Null
-            }
-            catch {
-                Write-Log "Could not create registry path: $currentPath"
-            }
-        }
-    }
-}
+Write-Host "Disabling Allow Widgets policy..."
+New-Item -Path $widgetsRegPath -Force | Out-Null
+Set-ItemProperty -Path $widgetsRegPath -Name $widgetsKeyName -Value $widgetsValue
+Write-Host "Allow Widgets policy disabled."
 
-# Function to Modify Registry for All Users
-function Set-RegistryForAllUsers {
-    param(
-        [string]$RegistryPath,
-        [string]$KeyName,
-        [int]$Value
-    )
+# 3. Enable "Remove pinned programs from the taskbar" Policy
+$taskbarRegPath = "HKLM:\Software\Policies\Microsoft\Windows\Explorer"
+$taskbarKeyName = "NoPinningToTaskbar"
+$taskbarValue = 1
 
-    try {
-        # Ensure HKU drive is loaded
-        if (-not (Get-PSDrive -Name HKU -ErrorAction SilentlyContinue)) {
-            New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
-        }
+Write-Host "Enabling 'Remove pinned programs from the taskbar' policy..."
+New-Item -Path $taskbarRegPath -Force | Out-Null
+Set-ItemProperty -Path $taskbarRegPath -Name $taskbarKeyName -Value $taskbarValue
+Write-Host "'Remove pinned programs from the taskbar' policy enabled."
 
-        # Load default user hive
-        Write-Log "Applying registry setting: $KeyName to default user profile"
-        $defaultProfilePath = "C:\Users\Default\NTUSER.DAT"
-        
-        if (Test-Path $defaultProfilePath) {
-            reg load HKU\DefaultUser $defaultProfilePath | Out-Null
-
-            # Prepare full key path
-            $fullKeyPath = "HKU:\DefaultUser\$($RegistryPath.Split(':')[1])"
-            
-            # Ensure path exists
-            Ensure-RegistryPath -Path $fullKeyPath
-
-            # Set registry property
-            New-ItemProperty -Path $fullKeyPath -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
-
-            # Unload default user hive
-            [gc]::Collect()
-            reg unload HKU\DefaultUser | Out-Null
-        }
-
-        # Apply to all existing user profiles
-        $userProfiles = Get-ChildItem -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" | 
-            Where-Object { 
-                $_.PSChildName -match "^S-1-5-21-" -and 
-                ($_.GetValue("ProfileImagePath") -like "C:\Users\*" -or $_.GetValue("ProfileImagePath") -like "C:\Windows\System32\config\*")
-            }
-
-        foreach ($profile in $userProfiles) {
-            $sid = $profile.PSChildName
-            $userRegPath = "HKU:\$sid\$($RegistryPath.Split(':')[1])"
-
-            try {
-                # Ensure registry path exists
-                Ensure-RegistryPath -Path $userRegPath
-
-                # Set registry key
-                New-ItemProperty -Path $userRegPath -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
-                Write-Log "Applied $KeyName to user profile: $sid"
-            }
-            catch {
-                Write-Log "Could not modify registry for user profile $sid"
-            }
-        }
-
-        Write-Log "Successfully applied $KeyName system-wide"
-    }
-    catch {
-        Write-Log "Error applying system-wide registry setting: $_"
-    }
-}
-
-# 1. Hide Clock for All Users
-try {
-    Write-Log "Configuring system-wide clock visibility..."
-    $clockRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
-    Set-RegistryForAllUsers -RegistryPath $clockRegPath -KeyName "HideClock" -Value 1
-}
-catch {
-    Write-Log "Error configuring clock visibility: $_"
-}
-
-# 2. Disable Widgets for All Users
-try {
-    Write-Log "Disabling widgets system-wide..."
-    $widgetsRegPath = "HKLM:\Software\Policies\Microsoft\Dsh"
-    Ensure-RegistryPath -Path $widgetsRegPath
-    Set-ItemProperty -Path $widgetsRegPath -Name "AllowNewsAndInterests" -Value 0
-}
-catch {
-    Write-Log "Error disabling widgets: $_"
-}
-
-# 3. Remove Pinned Programs from Taskbar
-try {
-    Write-Log "Preventing taskbar pinning system-wide..."
-    $taskbarRegPath = "HKLM:\Software\Policies\Microsoft\Windows\Explorer"
-    Ensure-RegistryPath -Path $taskbarRegPath
-    Set-ItemProperty -Path $taskbarRegPath -Name "NoPinningToTaskbar" -Value 1
-}
-catch {
-    Write-Log "Error preventing taskbar pinning: $_"
-}
-
-# 4. Optional: Open System Icons Configuration
-Write-Log "Opening system icons configuration panel..."
+# 4. Open System Icons Configuration Panel
+Write-Host "Opening system icons configuration panel..."
 Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
 
-# 5. Restart Explorer Processes for All Users
-try {
-    Write-Log "Attempting to restart Explorer for all active sessions..."
-    
-    # Get all active user sessions
-    $sessions = Get-Process -Name explorer | ForEach-Object { 
-        try {
-            $_.UserName
-        }
-        catch {
-            $null
-        }
-    } | Where-Object { $_ -ne $null } | Select-Object -Unique
-
-    foreach ($session in $sessions) {
-        try {
-            Write-Log "Restarting Explorer for user: $session"
-            Stop-Process -Name explorer -Force -ErrorAction Stop
-        }
-        catch {
-            Write-Log "Could not restart Explorer for $session"
-        }
-    }
-
-    # Start Explorer for current user
-    Start-Process explorer
-    Write-Log "Explorer restart completed."
-}
-catch {
-    Write-Log "Error during Explorer restart: $_"
-}
-
-Write-Log "Taskbar customization script completed successfully."
+# 5. Restart Explorer to Apply Changes
+Write-Host "Restarting Explorer to apply changes..."
+Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+Start-Process explorer
+Write-Host "Taskbar customization changes applied successfully."
