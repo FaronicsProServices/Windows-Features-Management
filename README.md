@@ -1,7 +1,7 @@
 # Windows-Features-Management
 Scripts for enabling, disabling, and fetching details of Windows features.
 
-Purpose: Scripts for enabling, disabling, and fetching details of Windows features.
+Purpose: Scripts for enabling, disabling, customizing and fetching details of Windows features.
 Subcategories:
 
 •	Optional Features:
@@ -16,3 +16,6 @@ Subcategories:
 4.	Export Start Menu Layout from Current Logged In User
 5.	Remove Specific Application
 
+
+•	Windows Features Customization:
+1.	TaskBar Customization
