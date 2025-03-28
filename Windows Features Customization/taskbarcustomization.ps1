@@ -1,7 +1,11 @@
 # PowerShell Script for System-Wide Taskbar Customization
 
 # Elevated Privileges Check
-if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRoleAsync([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+$currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+$windowsPrincipal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+$adminRole = [Security.Principal.WindowsBuiltInRole]::Administrator
+
+if (-NOT $windowsPrincipal.IsInRole($adminRole)) {
     Write-Error "This script must be run as an Administrator."
     exit
 }
@@ -22,22 +26,40 @@ function Set-RegistryForAllUsers {
     )
 
     try {
-        # System-wide registry path
-        $systemPath = $RegistryPath -replace "HKCU:", "HKEY_USERS"
+        # Ensure HKU drive is loaded
+        if (-not (Get-PSDrive -Name HKU -ErrorAction SilentlyContinue)) {
+            New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
+        }
 
         # Load default user hive
         Write-Log "Applying registry setting: $KeyName to default user profile"
-        REG LOAD HKU\DefaultUser C:\Users\Default\NTUSER.DAT | Out-Null
+        $defaultProfilePath = "C:\Users\Default\NTUSER.DAT"
+        
+        if (Test-Path $defaultProfilePath) {
+            reg load HKU\DefaultUser $defaultProfilePath | Out-Null
 
-        # Modify default user registry
-        New-ItemProperty -Path "HKU:\DefaultUser\$($RegistryPath.Split(':')[1])" -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
+            # Modify default user registry
+            $fullKeyPath = "HKU:\DefaultUser\$($RegistryPath.Split(':')[1])"
+            
+            # Ensure path exists
+            $parentPath = Split-Path $fullKeyPath
+            if (-not (Test-Path $parentPath)) {
+                New-Item -Path $parentPath -Force | Out-Null
+            }
 
-        # Unload default user hive
-        [gc]::Collect()
-        REG UNLOAD HKU\DefaultUser | Out-Null
+            New-ItemProperty -Path $fullKeyPath -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
+
+            # Unload default user hive
+            [gc]::Collect()
+            reg unload HKU\DefaultUser | Out-Null
+        }
 
         # Apply to all existing user profiles
-        $userProfiles = Get-ChildItem -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" | Where-Object { $_.GetValue("ProfileImagePath") -like "C:\Users\*" }
+        $userProfiles = Get-ChildItem -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" | 
+            Where-Object { 
+                $_.PSChildName -match "^S-1-5-21-" -and 
+                ($_.GetValue("ProfileImagePath") -like "C:\Users\*" -or $_.GetValue("ProfileImagePath") -like "C:\Windows\System32\config\*")
+            }
 
         foreach ($profile in $userProfiles) {
             $sid = $profile.PSChildName
@@ -45,10 +67,13 @@ function Set-RegistryForAllUsers {
 
             try {
                 # Ensure registry path exists
-                New-Item -Path $userRegPath -Force | Out-Null
+                $parentPath = Split-Path $userRegPath
+                if (-not (Test-Path $parentPath)) {
+                    New-Item -Path $parentPath -Force | Out-Null
+                }
 
                 # Set registry key
-                Set-ItemProperty -Path $userRegPath -Name $KeyName -Value $Value -ErrorAction Stop
+                New-ItemProperty -Path $userRegPath -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
                 Write-Log "Applied $KeyName to user profile: $sid"
             }
             catch {
