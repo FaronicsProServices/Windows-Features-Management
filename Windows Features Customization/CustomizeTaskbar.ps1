@@ -1,29 +1,33 @@
-# PowerShell Script for Taskbar Customization (No Restart Required)
+# PowerShell Script for Taskbar Customization (System Account Compatible)
 
-# 1. Add HideClock Registry Key
-$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
-$keyName = "HideClock"
-$keyValue = 1
+# Detect the currently logged-in user
+$loggedInUser = (Get-WmiObject -Class Win32_ComputerSystem | Select-Object -ExpandProperty UserName)
 
-Write-Host "Creating registry key to hide the clock..."
-if (-not (Test-Path $regPath)) {
-    New-Item -Path $regPath -Force | Out-Null
-}
-Set-ItemProperty -Path $regPath -Name $keyName -Value $keyValue
-Write-Host "Registry key HideClock added successfully."
+if ($loggedInUser -and $loggedInUser -ne "SYSTEM") {
+    # Load the active user's registry hive
+    $userSid = (New-Object System.Security.Principal.NTAccount($loggedInUser)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+    $regHivePath = "HKU:\$userSid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
 
-# 2. Disable Allow Widgets via Group Policy (Requires Admin)
-Write-Host "Skipping 'Disable Allow Widgets' policy since it requires admin privileges."
+    # 1. Add HideClock Registry Key (User-specific key)
+    $keyName = "HideClock"
+    $keyValue = 1
+    Write-Host "Creating registry key to hide the clock for user $loggedInUser..."
+    if (-not (Test-Path $regHivePath)) {
+        New-Item -Path $regHivePath -Force | Out-Null
+    }
+    Set-ItemProperty -Path $regHivePath -Name $keyName -Value $keyValue
+    Write-Host "Registry key HideClock added successfully for $loggedInUser."
 
-# 3. Enable "Remove pinned programs from the taskbar" Policy (Requires Admin)
-Write-Host "Skipping 'Remove pinned programs from the taskbar' policy since it requires admin privileges."
+    # 2. Inform that admin-specific tasks are skipped
+    Write-Host "Disabling Allow Widgets policy requires admin privileges. This step will be skipped."
+    Write-Host "'Remove pinned programs from the taskbar' policy requires admin privileges. This step will be skipped."
 
-# 4. Open System Icons Configuration Panel
-Write-Host "Attempting to open system icons configuration panel..."
-if ($env:USERNAME -ne "SYSTEM") {
-    Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons" -ErrorAction SilentlyContinue
+    # 3. Open System Icons Configuration Panel in the logged-in user's context
+    $command = 'explorer.exe "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"'
+    Write-Host "Opening system icons configuration panel for user $loggedInUser..."
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $command -NoNewWindow -LoadUserProfile
+
+    Write-Host "Taskbar customization process completed for $loggedInUser. No restart required."
 } else {
-    Write-Host "Explorer-related actions are not supported in system context."
+    Write-Host "No active user detected or script running under SYSTEM account. Task cannot proceed."
 }
-
-Write-Host "Taskbar customization changes applied successfully."
