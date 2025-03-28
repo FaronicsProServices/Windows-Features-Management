@@ -17,6 +17,26 @@ function Write-Log {
     Write-Host "[$timestamp] $Message"
 }
 
+# Function to Ensure Registry Path Exists
+function Ensure-RegistryPath {
+    param([string]$Path)
+    
+    $pathParts = $Path -split '\\'
+    $currentPath = $pathParts[0]
+    
+    for ($i = 1; $i -lt $pathParts.Count; $i++) {
+        $currentPath += "\$($pathParts[$i])"
+        if (-not (Test-Path $currentPath)) {
+            try {
+                New-Item -Path $currentPath -Force | Out-Null
+            }
+            catch {
+                Write-Log "Could not create registry path: $currentPath"
+            }
+        }
+    }
+}
+
 # Function to Modify Registry for All Users
 function Set-RegistryForAllUsers {
     param(
@@ -31,9 +51,6 @@ function Set-RegistryForAllUsers {
             New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
         }
 
-        # Prepare registry paths
-        $relativeRegistryPath = $RegistryPath.Split(':')[1]
-
         # Load default user hive
         Write-Log "Applying registry setting: $KeyName to default user profile"
         $defaultProfilePath = "C:\Users\Default\NTUSER.DAT"
@@ -41,29 +58,18 @@ function Set-RegistryForAllUsers {
         if (Test-Path $defaultProfilePath) {
             reg load HKU\DefaultUser $defaultProfilePath | Out-Null
 
-            try {
-                # Ensure full path exists for default user
-                $fullDefaultPath = "HKU:\DefaultUser\$relativeRegistryPath"
-                $defaultParentPath = Split-Path $fullDefaultPath
-                
-                # Create full path with all intermediate keys
-                $pathParts = $defaultParentPath.Split('\')
-                $currentPath = "HKU:\DefaultUser"
-                foreach ($part in $pathParts[2..($pathParts.Length-1)]) {
-                    $currentPath = Join-Path $currentPath $part
-                    if (-not (Test-Path $currentPath)) {
-                        New-Item -Path $currentPath -Force | Out-Null
-                    }
-                }
+            # Prepare full key path
+            $fullKeyPath = "HKU:\DefaultUser\$($RegistryPath.Split(':')[1])"
+            
+            # Ensure path exists
+            Ensure-RegistryPath -Path $fullKeyPath
 
-                # Set the registry key
-                New-ItemProperty -Path $fullDefaultPath -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
-            }
-            finally {
-                # Unload default user hive
-                [gc]::Collect()
-                reg unload HKU\DefaultUser | Out-Null
-            }
+            # Set registry property
+            New-ItemProperty -Path $fullKeyPath -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
+
+            # Unload default user hive
+            [gc]::Collect()
+            reg unload HKU\DefaultUser | Out-Null
         }
 
         # Apply to all existing user profiles
@@ -75,20 +81,11 @@ function Set-RegistryForAllUsers {
 
         foreach ($profile in $userProfiles) {
             $sid = $profile.PSChildName
-            $userRegPath = "HKU:\$sid\$relativeRegistryPath"
+            $userRegPath = "HKU:\$sid\$($RegistryPath.Split(':')[1])"
 
             try {
-                # Ensure full path exists for user profile
-                $parentPath = Split-Path $userRegPath
-                $pathParts = $parentPath.Split('\')
-                $currentPath = "HKU:\$sid"
-                
-                foreach ($part in $pathParts[3..($pathParts.Length-1)]) {
-                    $currentPath = Join-Path $currentPath $part
-                    if (-not (Test-Path $currentPath)) {
-                        New-Item -Path $currentPath -Force | Out-Null
-                    }
-                }
+                # Ensure registry path exists
+                Ensure-RegistryPath -Path $userRegPath
 
                 # Set registry key
                 New-ItemProperty -Path $userRegPath -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
@@ -120,7 +117,7 @@ catch {
 try {
     Write-Log "Disabling widgets system-wide..."
     $widgetsRegPath = "HKLM:\Software\Policies\Microsoft\Dsh"
-    New-Item -Path $widgetsRegPath -Force | Out-Null
+    Ensure-RegistryPath -Path $widgetsRegPath
     Set-ItemProperty -Path $widgetsRegPath -Name "AllowNewsAndInterests" -Value 0
 }
 catch {
@@ -131,7 +128,7 @@ catch {
 try {
     Write-Log "Preventing taskbar pinning system-wide..."
     $taskbarRegPath = "HKLM:\Software\Policies\Microsoft\Windows\Explorer"
-    New-Item -Path $taskbarRegPath -Force | Out-Null
+    Ensure-RegistryPath -Path $taskbarRegPath
     Set-ItemProperty -Path $taskbarRegPath -Name "NoPinningToTaskbar" -Value 1
 }
 catch {
