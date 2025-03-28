@@ -1,58 +1,37 @@
 # PowerShell Script for Taskbar Customization
-# Designed to run silently and restart Explorer process
 
-# Suppress all error outputs and continue execution
-$ErrorActionPreference = 'SilentlyContinue'
-
-# Function to create registry key with error handling
-function Set-RegistryKey {
-    param (
-        [string]$Path,
-        [string]$KeyName,
-        [int]$Value
-    )
-    
-    try {
-        # Ensure the registry path exists
-        if (!(Test-Path $Path)) {
-            New-Item -Path $Path -Force | Out-Null
-        }
-        
-        # Set the registry key
-        New-ItemProperty -Path $Path -Name $KeyName -Value $Value -PropertyType DWord -Force | Out-Null
-    }
-    catch {
-        Write-Error "Failed to set registry key: $Path\$KeyName"
-    }
-}
-
-# 1. Hide Clock in Taskbar
+# 1. Add HideClock Registry Key
 $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
-Set-RegistryKey -Path $regPath -KeyName "HideClock" -Value 1
+$keyName = "HideClock"
+$keyValue = 1
 
-# 2. Disable Widgets via Group Policy
+Write-Host "Creating registry key to hide the clock..."
+New-Item -Path $regPath -Force | Out-Null
+Set-ItemProperty -Path $regPath -Name $keyName -Value $keyValue
+Write-Host "Registry key HideClock added successfully."
+
+# 2. Disable Allow Widgets via Group Policy
 $widgetsRegPath = "HKLM:\Software\Policies\Microsoft\Dsh"
-Set-RegistryKey -Path $widgetsRegPath -KeyName "AllowNewsAndInterests" -Value 0
+$widgetsKeyName = "AllowNewsAndInterests"
+$widgetsValue = 0
 
-# 3. Remove Pinned Programs from Taskbar
+Write-Host "Disabling Allow Widgets policy..."
+New-Item -Path $widgetsRegPath -Force | Out-Null
+Set-ItemProperty -Path $widgetsRegPath -Name $widgetsKeyName -Value $widgetsValue
+Write-Host "Allow Widgets policy disabled."
+
+# 3. Enable "Remove pinned programs from the taskbar" Policy
 $taskbarRegPath = "HKLM:\Software\Policies\Microsoft\Windows\Explorer"
-Set-RegistryKey -Path $taskbarRegPath -KeyName "NoPinningToTaskbar" -Value 1
+$taskbarKeyName = "NoPinningToTaskbar"
+$taskbarValue = 1
 
-# 4. Additional Taskbar Customization
-$additionalTaskbarPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-Set-RegistryKey -Path $additionalTaskbarPath -KeyName "ShowCortanaButton" -Value 0
-Set-RegistryKey -Path $additionalTaskbarPath -KeyName "ShowTaskViewButton" -Value 0
+Write-Host "Enabling 'Remove pinned programs from the taskbar' policy..."
+New-Item -Path $taskbarRegPath -Force | Out-Null
+Set-ItemProperty -Path $taskbarRegPath -Name $taskbarKeyName -Value $taskbarValue
+Write-Host "'Remove pinned programs from the taskbar' policy enabled."
 
-# 5. Restart Explorer Process Reliably
-$explorerProcess = Get-Process explorer -ErrorAction SilentlyContinue
+# 4. Open System Icons Configuration Panel
+Write-Host "Opening system icons configuration panel..."
+Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
 
-if ($explorerProcess) {
-    # Stop all Explorer processes
-    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-}
-
-# Start a new Explorer process
-Start-Process explorer.exe
-
-# Exit with success code
-exit 0
+Write-Host "Taskbar customization process completed. Restart Explorer if necessary."
