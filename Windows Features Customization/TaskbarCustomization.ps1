@@ -122,27 +122,7 @@ try {
     Write-Log "Enabling 'Remove pinned programs from the taskbar' policy..."
     Set-RegistryValueSafely -Path $taskbarRegPath -Name $taskbarKeyName -Value $taskbarValue
 
-    # 4. Create a scheduled task to open System Icons Configuration Panel for each user
-    foreach ($sid in $userSIDs) {
-        Write-Log "Creating scheduled task for user $sid to open system icons panel..."
-        try {
-            $taskName = "OpenSystemIcons_$($sid.Replace('-', '_'))"
-            $taskCommand = "explorer.exe shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
-            
-            # Create the scheduled task
-            $taskAction = New-ScheduledTaskAction -Execute $taskCommand
-            $taskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(5)
-            $taskPrincipal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Highest
-            
-            Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Force | Out-Null
-            Write-Log "Successfully created scheduled task for user $sid"
-        }
-        catch {
-            Write-Log "Failed to create scheduled task for user $sid: ${_}"
-        }
-    }
-
-    # 5. Restart Explorer using the safe method
+    # 4. Restart Explorer using the safe method
     Write-Log "Initiating safe Explorer restart..."
     Restart-ExplorerSafely
 
