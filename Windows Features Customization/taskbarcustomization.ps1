@@ -34,10 +34,19 @@ Write-Host "'Remove pinned programs from the taskbar' policy enabled."
 Write-Host "Opening system icons configuration panel..."
 Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
 
-# 5. Restart Explorer using Registry-based Method
-Write-Host "Triggering Explorer restart via registry..."
-$restartExplorerKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer"
-Set-ItemProperty -Path $restartExplorerKey -Name "RestartExplorer" -Value 1
-Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+# 5. Restart Explorer Using User Session Method
+Write-Host "Restarting Explorer in user session..."
+$ExplorerRestartScript = {
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    Start-Process explorer
+}
+
+# Get Active User Session and Run in Their Context
+$UserSession = (Get-WmiObject Win32_Process -Filter "Name='explorer.exe'").SessionId
+if ($UserSession) {
+    Invoke-Command -ScriptBlock $ExplorerRestartScript -Credential $null -ArgumentList $UserSession
+} else {
+    Write-Host "No active user session detected. Skipping Explorer restart."
+}
 
 Write-Host "Taskbar customization changes applied successfully."
