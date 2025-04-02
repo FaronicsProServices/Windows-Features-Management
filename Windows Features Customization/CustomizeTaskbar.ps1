@@ -65,24 +65,34 @@ function Set-RegistryValueSafely {
         [object]$Value
     )
     try {
-        # Create the registry key using reg.exe
-        $regPath = $Path.Replace("Registry::", "").Replace("HKLM:", "HKLM").Replace("HKCU:", "HKCU")
-        $regCommand = "reg add `"$regPath`" /f"
-        $result = Invoke-Expression $regCommand
-        if ($LASTEXITCODE -eq 0) {
-            # Set the value using reg.exe
-            $regCommand = "reg add `"$regPath`" /v `"$Name`" /t REG_DWORD /d $Value /f"
-            $result = Invoke-Expression $regCommand
-            if ($LASTEXITCODE -eq 0) {
-                Write-Log "Successfully set registry value $Name at $Path"
-                return $true
-            }
+        # Create a temporary .reg file
+        $tempRegFile = Join-Path $env:TEMP "temp_reg_$([System.Guid]::NewGuid().ToString()).reg"
+        $regContent = @"
+Windows Registry Editor Version 5.00
+
+[$Path]
+"$Name"=dword:$Value
+"@
+        Set-Content -Path $tempRegFile -Value $regContent -Encoding ASCII
+
+        # Import the registry file
+        $result = Start-Process "regedit.exe" -ArgumentList "/s `"$tempRegFile`"" -Wait -NoNewWindow -PassThru
+        if ($result.ExitCode -eq 0) {
+            Write-Log "Successfully set registry value $Name at $Path"
+            Remove-Item $tempRegFile -Force -ErrorAction SilentlyContinue
+            return $true
         }
-        Write-Log "Failed to set registry value using reg.exe"
-        return $false
+        else {
+            Write-Log "Failed to set registry value using regedit.exe"
+            Remove-Item $tempRegFile -Force -ErrorAction SilentlyContinue
+            return $false
+        }
     }
     catch {
         Write-Log "Error setting registry value: ${_}"
+        if (Test-Path $tempRegFile) {
+            Remove-Item $tempRegFile -Force -ErrorAction SilentlyContinue
+        }
         return $false
     }
 }
