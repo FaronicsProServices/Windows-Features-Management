@@ -51,7 +51,7 @@ function Restart-ExplorerSafely {
             }
             catch {
                 Write-Log "All restart methods failed. Please restart manually."
-                Write-Log "Error: $_"
+                Write-Log "Error: ${_}"
             }
         }
     }
@@ -65,47 +65,31 @@ function Set-RegistryValueSafely {
         [object]$Value
     )
     try {
-        # Check if the key exists
-        if (!(Test-Path $Path)) {
-            Write-Log "Creating registry path: $Path"
-            New-Item -Path $Path -Force | Out-Null
+        # Create the registry key using reg.exe
+        $regPath = $Path.Replace("Registry::", "").Replace("HKLM:", "HKLM").Replace("HKCU:", "HKCU")
+        $regCommand = "reg add `"$regPath`" /f"
+        $result = Invoke-Expression $regCommand
+        if ($LASTEXITCODE -eq 0) {
+            # Set the value using reg.exe
+            $regCommand = "reg add `"$regPath`" /v `"$Name`" /t REG_DWORD /d $Value /f"
+            $result = Invoke-Expression $regCommand
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log "Successfully set registry value $Name at $Path"
+                return $true
+            }
         }
-        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force
-        Write-Log "Successfully set registry value $Name at $Path"
-        return $true
-    }
-    catch {
-        Write-Log "Error setting registry value: $_"
+        Write-Log "Failed to set registry value using reg.exe"
         return $false
     }
-}
-
-# Function to get psexec path
-function Get-PsExecPath {
-    $possiblePaths = @(
-        "$env:SystemRoot\System32\psexec.exe",
-        "$env:SystemRoot\SysWOW64\psexec.exe",
-        "$env:ProgramFiles\Sysinternals\psexec.exe",
-        "$env:ProgramFiles(x86)\Sysinternals\psexec.exe"
-    )
-    
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            return $path
-        }
+    catch {
+        Write-Log "Error setting registry value: ${_}"
+        return $false
     }
-    return $null
 }
 
 # Main script execution
 try {
     Write-Log "Starting Taskbar Customization script..."
-
-    # Get psexec path
-    $psexecPath = Get-PsExecPath
-    if (-not $psexecPath) {
-        Write-Log "Warning: psexec.exe not found. Some features may not work."
-    }
 
     # Get all user SIDs
     $userSIDs = Get-UserSIDs
@@ -114,7 +98,7 @@ try {
     # 1. Add HideClock Registry Key for each user
     foreach ($sid in $userSIDs) {
         Write-Log "Processing user SID: $sid"
-        $regPath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+        $regPath = "HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
         $keyName = "HideClock"
         $keyValue = 1
 
@@ -123,7 +107,7 @@ try {
     }
 
     # 2. Disable Allow Widgets via Group Policy (HKLM - works for all users)
-    $widgetsRegPath = "HKLM:\Software\Policies\Microsoft\Dsh"
+    $widgetsRegPath = "HKLM\Software\Policies\Microsoft\Dsh"
     $widgetsKeyName = "AllowNewsAndInterests"
     $widgetsValue = 0
 
@@ -131,28 +115,31 @@ try {
     Set-RegistryValueSafely -Path $widgetsRegPath -Name $widgetsKeyName -Value $widgetsValue
 
     # 3. Enable "Remove pinned programs from the taskbar" Policy (HKLM - works for all users)
-    $taskbarRegPath = "HKLM:\Software\Policies\Microsoft\Windows\Explorer"
+    $taskbarRegPath = "HKLM\Software\Policies\Microsoft\Windows\Explorer"
     $taskbarKeyName = "NoPinningToTaskbar"
     $taskbarValue = 1
 
     Write-Log "Enabling 'Remove pinned programs from the taskbar' policy..."
     Set-RegistryValueSafely -Path $taskbarRegPath -Name $taskbarKeyName -Value $taskbarValue
 
-    # 4. Open System Icons Configuration Panel for each user
-    if ($psexecPath) {
-        foreach ($sid in $userSIDs) {
-            Write-Log "Opening system icons configuration panel for user $sid..."
-            try {
-                Start-Process $psexecPath -ArgumentList "-i -u $sid explorer.exe shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons" -WindowStyle Hidden -Wait
-                Write-Log "Successfully opened system icons panel for user $sid"
-            }
-            catch {
-                Write-Log "Failed to open system icons panel for user $sid: $_"
-            }
+    # 4. Create a scheduled task to open System Icons Configuration Panel for each user
+    foreach ($sid in $userSIDs) {
+        Write-Log "Creating scheduled task for user $sid to open system icons panel..."
+        try {
+            $taskName = "OpenSystemIcons_$($sid.Replace('-', '_'))"
+            $taskCommand = "explorer.exe shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
+            
+            # Create the scheduled task
+            $taskAction = New-ScheduledTaskAction -Execute $taskCommand
+            $taskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(5)
+            $taskPrincipal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Highest
+            
+            Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Force | Out-Null
+            Write-Log "Successfully created scheduled task for user $sid"
         }
-    }
-    else {
-        Write-Log "Skipping system icons configuration panel - psexec not available"
+        catch {
+            Write-Log "Failed to create scheduled task for user $sid: ${_}"
+        }
     }
 
     # 5. Restart Explorer using the safe method
@@ -162,6 +149,6 @@ try {
     Write-Log "Taskbar customization completed successfully."
 }
 catch {
-    Write-Log "An error occurred during script execution: $_"
+    Write-Log "An error occurred during script execution: ${_}"
     exit 1
 } 
