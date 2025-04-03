@@ -30,26 +30,27 @@ New-Item -Path $taskbarRegPath -Force | Out-Null
 Set-ItemProperty -Path $taskbarRegPath -Name $taskbarKeyName -Value $taskbarValue
 Write-Host "'Remove pinned programs from the taskbar' policy enabled."
 
-# 4. Remove all pinned apps from the taskbar
+# 4. Open System Icons Configuration Panel
+Write-Host "Opening system icons configuration panel..."
+Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
+
+# 5. Remove all pinned apps from the taskbar
 $taskbandRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband"
 
 Write-Host "Removing all pinned apps from the taskbar..."
 Remove-Item -Path $taskbandRegPath -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host "Pinned apps removed successfully."
 
-Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband" -Force -Recurse -ErrorAction SilentlyContinue
+# 6. Restart Explorer for Active User (Works for 23H2 & 24H2)
+Write-Host "Restarting Explorer to apply changes..."
 
-# 5. Force Restart Explorer for the Active User
-Write-Host "Restarting Explorer for the active user..."
-
-# Find active user session ID
+# Get active user session
 $UserSession = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq "explorer.exe" } | Select-Object -First 1
 if ($UserSession) {
     $SessionID = $UserSession.SessionId
     Write-Host "Active user session detected: $SessionID"
 
-    # Stop Explorer if running
-    Write-Host "Stopping explorer.exe process..."
+    # Stop Explorer
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
 
     # Restart Explorer in the correct user session
