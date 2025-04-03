@@ -30,11 +30,7 @@ New-Item -Path $taskbarRegPath -Force | Out-Null
 Set-ItemProperty -Path $taskbarRegPath -Name $taskbarKeyName -Value $taskbarValue
 Write-Host "'Remove pinned programs from the taskbar' policy enabled."
 
-# 4. Open System Icons Configuration Panel
-Write-Host "Opening system icons configuration panel..."
-Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
-
-# 5. Remove all pinned apps from the taskbar
+# 4. Remove all pinned apps from the taskbar
 $taskbandRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband"
 
 Write-Host "Removing all pinned apps from the taskbar..."
@@ -43,26 +39,25 @@ Write-Host "Pinned apps removed successfully."
 
 Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband" -Force -Recurse -ErrorAction SilentlyContinue
 
-# 6. Restart Explorer for the Logged-in User (Even when Running as SYSTEM)
-Write-Host "Restarting Explorer for the current user..."
+# 5. Force Restart Explorer for the Active User
+Write-Host "Restarting Explorer for the active user..."
 
-# Stop Explorer if running
-$explorerProcess = Get-Process -Name explorer -ErrorAction SilentlyContinue
-if ($explorerProcess) {
+# Find active user session ID
+$UserSession = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq "explorer.exe" } | Select-Object -First 1
+if ($UserSession) {
+    $SessionID = $UserSession.SessionId
+    Write-Host "Active user session detected: $SessionID"
+
+    # Stop Explorer if running
     Write-Host "Stopping explorer.exe process..."
     Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-} else {
-    Write-Host "Explorer.exe is not running, starting it now..."
-}
 
-# Ensure Explorer starts in the user session
-$SessionID = (Get-WmiObject Win32_Process -Filter "Name='winlogon.exe'" | Select-Object -First 1).SessionId
-if ($SessionID) {
-    Write-Host "Starting explorer.exe in user session ID $SessionID..."
-    Start-Process -FilePath "C:\Windows\explorer.exe" -NoNewWindow
+    # Restart Explorer in the correct user session
+    $Command = "C:\Windows\System32\cmd.exe /c start explorer.exe"
+    Start-Process -FilePath "C:\Windows\System32\cmd.exe" -ArgumentList "/c start explorer.exe" -NoNewWindow
     Write-Host "Explorer restarted successfully."
 } else {
-    Write-Host "No user session found. Explorer not started."
+    Write-Host "No active user session found. Explorer restart skipped."
 }
 
 Write-Host "Taskbar customization changes applied successfully."
