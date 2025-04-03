@@ -41,14 +41,10 @@ Write-Host "Removing all pinned apps from the taskbar..."
 Remove-Item -Path $taskbandRegPath -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host "Pinned apps removed successfully."
 
+Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband" -Force -Recurse -ErrorAction SilentlyContinue
+
+
 Write-Host "Refreshing Explorer settings..."
 Get-Process explorer | Stop-Process -Force
 Start-Process explorer
 
-
-# 6. Restart Explorer to Apply Changes
-Write-Host "Restarting Explorer to apply changes..."
-Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-Start-Process explorer
-Write-Host "Taskbar customization changes applied successfully."
