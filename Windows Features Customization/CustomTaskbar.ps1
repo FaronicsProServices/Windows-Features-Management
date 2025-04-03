@@ -34,9 +34,20 @@ Write-Host "'Remove pinned programs from the taskbar' policy enabled."
 Write-Host "Opening system icons configuration panel..."
 Start-Process -FilePath "explorer.exe" -ArgumentList "shell:::{05d7b0f4-2121-4eff-bf6b-ed3f69b894d9}\SystemIcons"
 
-# 5. Restart Explorer to Apply Changes
+# 5. Remove all pinned apps from the taskbar
+$taskbandRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband"
+
+Write-Host "Removing all pinned apps from the taskbar..."
+Remove-Item -Path $taskbandRegPath -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host "Pinned apps removed successfully."
+
+
+# 6. Restart Explorer to Apply Changes
 Write-Host "Restarting Explorer to apply changes..."
 Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 Start-Process explorer
 Write-Host "Taskbar customization changes applied successfully."
+
+Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+Start-Process explorer
