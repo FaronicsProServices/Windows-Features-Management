@@ -43,8 +43,26 @@ Write-Host "Pinned apps removed successfully."
 
 Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband" -Force -Recurse -ErrorAction SilentlyContinue
 
+# 6. Restart Explorer for the Logged-in User (Even when Running as SYSTEM)
+Write-Host "Restarting Explorer for the current user..."
 
-Write-Host "Refreshing Explorer settings..."
-Get-Process explorer | Stop-Process -Force
-Start-Process explorer
+# Stop Explorer if running
+$explorerProcess = Get-Process -Name explorer -ErrorAction SilentlyContinue
+if ($explorerProcess) {
+    Write-Host "Stopping explorer.exe process..."
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Host "Explorer.exe is not running, starting it now..."
+}
 
+# Ensure Explorer starts in the user session
+$SessionID = (Get-WmiObject Win32_Process -Filter "Name='winlogon.exe'" | Select-Object -First 1).SessionId
+if ($SessionID) {
+    Write-Host "Starting explorer.exe in user session ID $SessionID..."
+    Start-Process -FilePath "C:\Windows\explorer.exe" -NoNewWindow
+    Write-Host "Explorer restarted successfully."
+} else {
+    Write-Host "No user session found. Explorer not started."
+}
+
+Write-Host "Taskbar customization changes applied successfully."
